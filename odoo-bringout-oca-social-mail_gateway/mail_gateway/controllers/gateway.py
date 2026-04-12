@@ -49,7 +49,9 @@ class GatewayController(Controller):
                 ],
             )
         jsonrequest = json.loads(
-            request.httprequest.get_data().decode(request.httprequest.charset)
+            request.httprequest.get_data().decode(
+                getattr(request.httprequest, "charset", "utf-8")
+            )
         )
         dispatcher = (
             request.env["mail.gateway.%s" % usage]

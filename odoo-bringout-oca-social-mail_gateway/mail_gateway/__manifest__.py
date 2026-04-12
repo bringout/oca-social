@@ -29,6 +29,7 @@
             "mail_gateway/static/src/components/**/*.xml",
             "mail_gateway/static/src/components/**/*.js",
             "mail_gateway/static/src/components/**/*.scss",
+            "mail_gateway/static/src/views/fields/selection/selection_field.xml",
         ],
         "mail.assets_discuss_public": [
             "mail_gateway/static/src/components/**/*.xml",
