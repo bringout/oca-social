@@ -210,12 +210,16 @@ class MailGatewayTelegramService(models.AbstractModel):
                 attachments.append(attachment_data)
         if len(body) > 0 or attachments:
             author = self._get_author(chat.gateway_id, update)
+            author_id = author._name == "res.partner" and author.id
+            email_from = False
+            if author_id:
+                email_from = '"%s via Telegram" <telegram@gateway>' % author.name
             new_message = chat.message_post(
                 body=body,
-                author_id=author._name == "res.partner" and author.id,
+                author_id=author_id,
+                email_from=email_from,
                 gateway_type="telegram",
                 date=update.message.date.replace(tzinfo=None),
-                # message_id=update.message.message_id,
                 subtype_xmlid="mail.mt_comment",
                 message_type="comment",
                 attachments=attachments,
@@ -241,10 +245,10 @@ class MailGatewayTelegramService(models.AbstractModel):
                         .browse(related_message.gateway_message_id.res_id)
                         .message_post(
                             body=body,
-                            author_id=author._name == "res.partner" and author.id,
+                            author_id=author_id,
+                            email_from=email_from,
                             gateway_type="telegram",
                             date=update.message.date.replace(tzinfo=None),
-                            # message_id=update.message.message_id,
                             subtype_xmlid="mail.mt_comment",
                             message_type="comment",
                             attachments=attachments,
