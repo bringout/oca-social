@@ -10,8 +10,7 @@ class MailThread(models.AbstractModel):
         partners_data = [r for r in recipients_data if r["notif"] == "gateway"]
         if partners_data:
             self._notify_thread_by_gateway(message, partners_data, **kwargs)
-        non_gateway_data = [r for r in recipients_data if r["notif"] != "gateway"]
-        return super()._notify_thread_by_email(message, non_gateway_data, **kwargs)
+        return super()._notify_thread_by_email(message, recipients_data, **kwargs)
 
     def _notify_thread_by_gateway(self, message, partners_data, **kwargs):
         for partner_data in partners_data:

@@ -50,6 +50,11 @@ class MailChannel(models.Model):
             return False
         return base64.b64encode(avatar.encode())
 
+    def _notify_thread_by_email(self, message, recipients_data, **kwargs):
+        if self.channel_type == "gateway":
+            return True
+        return super()._notify_thread_by_email(message, recipients_data, **kwargs)
+
     @api.returns("mail.message", lambda value: value.id)
     def message_post(self, *args, gateway_type=False, **kwargs):
         message = super().message_post(
