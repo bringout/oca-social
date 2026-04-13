@@ -56,7 +56,7 @@ class ResPartnerGatewayChannel(models.Model):
 
     name = fields.Char(related="gateway_id.name")
     partner_id = fields.Many2one(
-        "res.partner", required=True, readonly=True, ondelete="cascade"
+        "res.partner", required=True, ondelete="cascade"
     )
     gateway_id = fields.Many2one(
         "mail.gateway", required=True, readonly=True, ondelete="cascade"
@@ -92,6 +92,42 @@ class ResPartnerGatewayChannel(models.Model):
             "Partner can only have one configuration for each gateway.",
         ),
     ]
+
+    def write(self, vals):
+        old_partner_map = {}
+        if "partner_id" in vals:
+            for rec in self:
+                old_partner_map[rec.id] = rec.partner_id.id
+        res = super().write(vals)
+        if "partner_id" in vals:
+            new_partner_id = vals["partner_id"]
+            for rec in self:
+                old_pid = old_partner_map.get(rec.id)
+                if old_pid and old_pid != new_partner_id:
+                    rec._update_channel_partner(old_pid, new_partner_id)
+        return res
+
+    def _update_channel_partner(self, old_partner_id, new_partner_id):
+        """Update mail.channel member and name when partner mapping changes."""
+        channels = self.env["mail.channel"].sudo().search([
+            ("gateway_id", "=", self.gateway_id.id),
+            ("gateway_channel_token", "=", self.gateway_token),
+        ])
+        new_partner = self.env["res.partner"].browse(new_partner_id)
+        for channel in channels:
+            member = self.env["mail.channel.member"].sudo().search([
+                ("channel_id", "=", channel.id),
+                ("partner_id", "=", old_partner_id),
+            ], limit=1)
+            if member:
+                self.env.cr.execute(
+                    "UPDATE mail_channel_member SET partner_id = %s WHERE id = %s",
+                    (new_partner_id, member.id),
+                )
+            channel.sudo().write({
+                "name": new_partner.display_name,
+                "anonymous_name": new_partner.display_name,
+            })
 
     def mail_format(self):
         return [r._mail_format() for r in self]
