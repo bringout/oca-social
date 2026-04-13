@@ -115,8 +115,16 @@ class MailMessage(models.Model):
         return {}
 
     def _get_gateway_thread_message_vals(self):
+        body = self.body
+        if self.model and self.res_id and "#URL#" in body:
+            base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
+            doc_url = "%s/web#model=%s&id=%s" % (base_url, self.model, self.res_id)
+            body = body.replace(
+                "#URL#",
+                '<a href="%s">%s</a>' % (doc_url, self.record_name or doc_url),
+            )
         return {
-            "body": self.body,
+            "body": body,
             "attachment_ids": self.attachment_ids.ids,
             "subtype_id": self.subtype_id.id,
             "author_id": self.env.user.partner_id.id,
