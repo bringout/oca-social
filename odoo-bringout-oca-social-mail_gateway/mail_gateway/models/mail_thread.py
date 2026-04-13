@@ -11,6 +11,21 @@ class MailThread(models.AbstractModel):
         if partners_data:
             self._notify_thread_by_gateway(message, partners_data, **kwargs)
         non_gateway_data = [r for r in recipients_data if r["notif"] != "gateway"]
+        # Skip email for partners that have a gateway channel configured
+        if non_gateway_data:
+            gateway_partner_ids = set(
+                self.env["res.partner.gateway.channel"]
+                .sudo()
+                .search([
+                    ("partner_id", "in", [r["id"] for r in non_gateway_data]),
+                ])
+                .mapped("partner_id.id")
+            )
+            if gateway_partner_ids:
+                non_gateway_data = [
+                    r for r in non_gateway_data
+                    if r["id"] not in gateway_partner_ids
+                ]
         return super()._notify_thread_by_email(message, non_gateway_data, **kwargs)
 
     def _notify_thread_by_gateway(self, message, partners_data, **kwargs):
