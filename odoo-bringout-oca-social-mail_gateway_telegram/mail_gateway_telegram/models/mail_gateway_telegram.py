@@ -262,11 +262,15 @@ class MailGatewayTelegramService(models.AbstractModel):
                     )
                     new_message.gateway_message_id = new_related_message
                     self._post_process_reply(related_message)
-                    # Notify all channel members so their chatter updates
-                    for member in chat.channel_member_ids.filtered("partner_id"):
+                    # Notify followers of the business document so chatter updates
+                    record = self.env[related_message.gateway_message_id.model].browse(
+                        related_message.gateway_message_id.res_id
+                    )
+                    follower_pids = record.message_follower_ids.mapped("partner_id")
+                    for partner in follower_pids:
                         self.env["bus.bus"]._sendone(
-                            member.partner_id,
-                            "mail.message/insert",
+                            partner,
+                            "mail.message/inbox",
                             new_related_message.message_format()[0],
                         )
             return new_message
