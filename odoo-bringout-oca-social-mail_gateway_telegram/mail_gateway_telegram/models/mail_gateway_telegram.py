@@ -77,6 +77,8 @@ class MailGatewayTelegramService(models.AbstractModel):
         return result
 
     def _preprocess_update(self, gateway, update):
+        if not update.message or not update.message.entities:
+            return False
         for entity in update.message.entities:
             if not entity.offset == 0:
                 continue
@@ -100,6 +102,9 @@ class MailGatewayTelegramService(models.AbstractModel):
             update, self._get_telegram_bot(token=gateway.token)
         )
         if self._preprocess_update(gateway, telegram_update):
+            return
+        if not telegram_update.message:
+            _logger.debug("Ignoring Telegram update without message: %s", telegram_update.update_id)
             return
         chat = self._get_channel(
             gateway, telegram_update.message.chat_id, telegram_update
@@ -143,7 +148,8 @@ class MailGatewayTelegramService(models.AbstractModel):
         ):
             return
         if isinstance(attachment, telegram.Contact):
-            data = attachment.vcard.encode("utf-8")
+            vcard = attachment.vcard or ""
+            data = vcard.encode("utf-8")
         else:
             file = await attachment.get_file()
             data = bytes(await file.download_as_bytearray())
