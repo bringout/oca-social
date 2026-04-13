@@ -50,6 +50,26 @@ class MailChannel(models.Model):
             return False
         return base64.b64encode(avatar.encode())
 
+    def _notify_thread(self, message, msg_vals=False, **kwargs):
+        rdata = super()._notify_thread(message, msg_vals=msg_vals, **kwargs)
+        # Core Odoo only sends last_interest_dt_changed for chat/group channels.
+        # Gateway channels need it too for real-time sidebar updates.
+        if self.channel_type == "gateway":
+            bus_notifications = []
+            for member in self.channel_member_ids.filtered("partner_id"):
+                bus_notifications.append((
+                    member.partner_id,
+                    "mail.channel/last_interest_dt_changed",
+                    {
+                        "id": self.id,
+                        "isServerPinned": member.is_pinned,
+                        "last_interest_dt": member.last_interest_dt,
+                    },
+                ))
+            if bus_notifications:
+                self.env["bus.bus"].sudo()._sendmany(bus_notifications)
+        return rdata
+
     def _notify_thread_by_email(self, message, recipients_data, **kwargs):
         if self.channel_type == "gateway":
             return True
