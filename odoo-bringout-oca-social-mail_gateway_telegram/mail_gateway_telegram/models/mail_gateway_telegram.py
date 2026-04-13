@@ -130,6 +130,10 @@ class MailGatewayTelegramService(models.AbstractModel):
             return attachment.set_name or attachment.emoji or "sticker"
         if isinstance(attachment, telegram.Contact):
             return attachment.first_name
+        if isinstance(attachment, telegram.Voice):
+            return "voice"
+        if isinstance(attachment, telegram.VideoNote):
+            return "video_note"
         return attachment.file_id
 
     async def _process_telegram_attachment(self, attachment):
@@ -171,9 +175,11 @@ class MailGatewayTelegramService(models.AbstractModel):
             output = BytesIO()
             exporter.process(an, output, **output_options)
             data = output.getvalue()
-        mimetype = guess_mimetype(data)
+        # Use Telegram-provided mime_type when available, fall back to detection
+        mimetype = getattr(attachment, "mime_type", None) or guess_mimetype(data)
+        ext = mimetypes.guess_extension(mimetype) or ".bin"
         return (
-            "{}{}".format(file_name, mimetypes.guess_extension(mimetype)),
+            "{}{}".format(file_name, ext),
             data,
             {},
         )
