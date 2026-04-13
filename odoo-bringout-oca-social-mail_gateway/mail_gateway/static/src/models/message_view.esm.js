@@ -7,7 +7,16 @@ registerPatch({
     recordMethods: {
         onClickGatewayThread(ev) {
             ev.preventDefault();
-            this.message.gatewayThread.open();
+            const data = this.message.gateway_thread_data;
+            if (data && data.model && data.id) {
+                this.env.services.action.doAction({
+                    type: "ir.actions.act_window",
+                    res_model: data.model,
+                    res_id: data.id,
+                    views: [[false, "form"]],
+                    target: "current",
+                });
+            }
         },
     },
 });
