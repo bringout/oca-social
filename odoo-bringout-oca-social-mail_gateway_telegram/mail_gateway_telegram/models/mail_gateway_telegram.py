@@ -262,6 +262,13 @@ class MailGatewayTelegramService(models.AbstractModel):
                     )
                     new_message.gateway_message_id = new_related_message
                     self._post_process_reply(related_message)
+                    # Notify all channel members so their chatter updates
+                    for member in chat.channel_member_ids.filtered("partner_id"):
+                        self.env["bus.bus"]._sendone(
+                            member.partner_id,
+                            "mail.message/insert",
+                            new_related_message.message_format()[0],
+                        )
             return new_message
 
     async def _send_telegram(
