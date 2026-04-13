@@ -77,6 +77,14 @@ class MailChannel(models.Model):
 
     @api.returns("mail.message", lambda value: value.id)
     def message_post(self, *args, gateway_type=False, **kwargs):
+        # Core Odoo only pins and updates last_interest_dt for chat/group.
+        # Gateway channels need it too for unread counters and sidebar ordering.
+        self.filtered(
+            lambda ch: ch.channel_type == "gateway"
+        ).mapped("channel_member_ids").sudo().write({
+            "is_pinned": True,
+            "last_interest_dt": fields.Datetime.now(),
+        })
         message = super().message_post(
             *args, gateway_type=gateway_type or self.gateway_id.gateway_type, **kwargs
         )
