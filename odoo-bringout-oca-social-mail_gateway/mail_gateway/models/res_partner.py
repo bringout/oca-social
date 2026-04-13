@@ -108,12 +108,23 @@ class ResPartnerGatewayChannel(models.Model):
         return res
 
     def _update_channel_partner(self, old_partner_id, new_partner_id):
-        """Update mail.channel member and name when partner mapping changes."""
+        """Update mail.channel member and name when partner mapping changes.
+
+        Walks up parent_id chain to find top-level company when
+        gateway.forum_per_contact is False.
+        """
         channels = self.env["mail.channel"].sudo().search([
             ("gateway_id", "=", self.gateway_id.id),
             ("gateway_channel_token", "=", self.gateway_token),
         ])
         new_partner = self.env["res.partner"].browse(new_partner_id)
+        # Resolve to top-level company if forum_per_contact is off
+        display_partner = new_partner
+        if not self.gateway_id.forum_per_contact:
+            top = new_partner
+            while top.parent_id:
+                top = top.parent_id
+            display_partner = top
         for channel in channels:
             member = self.env["mail.channel.member"].sudo().search([
                 ("channel_id", "=", channel.id),
@@ -122,11 +133,11 @@ class ResPartnerGatewayChannel(models.Model):
             if member:
                 self.env.cr.execute(
                     "UPDATE mail_channel_member SET partner_id = %s WHERE id = %s",
-                    (new_partner_id, member.id),
+                    (display_partner.id, member.id),
                 )
             channel.sudo().write({
-                "name": new_partner.display_name,
-                "anonymous_name": new_partner.display_name,
+                "name": display_partner.display_name,
+                "anonymous_name": display_partner.display_name,
             })
 
     def mail_format(self):

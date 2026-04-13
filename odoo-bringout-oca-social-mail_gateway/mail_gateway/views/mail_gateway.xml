@@ -73,7 +73,8 @@
         <field name="arch" type="xml">
             <tree>
                 <field name="name" />
-                <field name="token" />
+                <field name="gateway_type" />
+                <field name="integrated_webhook_state" />
             </tree>
         </field>
     </record>
