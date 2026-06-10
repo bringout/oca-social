@@ -19,7 +19,9 @@ patch(Chatter.prototype, {
         });
     },
     toggleComposer(mode = false) {
-        this.state.thread.composer.isGateway = mode === "gateway";
-        super.toggleComposer(mode);
+        if (this.state.thread?.composer) {
+            this.state.thread.composer.isGateway = mode === "gateway";
+        }
+        super.toggleComposer(...arguments);
     },
 });

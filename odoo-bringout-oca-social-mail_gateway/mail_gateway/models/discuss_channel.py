@@ -28,24 +28,25 @@ class MailChannel(models.Model):
         required=False,
     )
 
-    def _to_store(self, store: Store):
-        result = super()._to_store(store)
-        if not self:
-            return result
-        for record in self:
-            store.add(
-                record,
-                {
-                    "gateway": {
-                        "id": record.gateway_id.id,
-                        "name": record.gateway_id.name,
-                        "type": record.gateway_id.gateway_type,
+    def _to_store(self, store: Store, fields):
+        # v19 signature: `fields` is positional. Extra data must go through
+        # add_records_fields — store.add() from inside _to_store recurses.
+        super()._to_store(store, fields)
+        store.add_records_fields(
+            self,
+            [
+                Store.Attr(
+                    "gateway",
+                    lambda c: {
+                        "id": c.gateway_id.id,
+                        "name": c.gateway_id.name,
+                        "type": c.gateway_id.gateway_type,
                     },
-                    "gateway_name": record.gateway_id.name,
-                    "gateway_id": record.gateway_id.id,
-                },
-            )
-        return result
+                ),
+                Store.Attr("gateway_name", lambda c: c.gateway_id.name),
+                Store.Attr("gateway_id", lambda c: c.gateway_id.id),
+            ],
+        )
 
     def _generate_avatar_gateway(self):
         # We will use this function to set a default avatar on each module

@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <templates xml:space="preserve">
     <t t-inherit="mail.MessageNotificationPopover" t-inherit-mode="extension">
-        <xpath expr="//span[@t-if='notification.persona']" position="after">
+        <!-- v19: the popover spans are keyed on notification.res_partner_id /
+             notification.mail_email_address (persona was removed); extend the
+             t-if/t-elif chain after the email fallback. -->
+        <xpath
+            expr="//span[@t-elif='notification.mail_email_address']"
+            position="after"
+        >
             <span
                 t-elif="notification.notification_type == 'gateway'"
                 t-esc="notification.channel_name"

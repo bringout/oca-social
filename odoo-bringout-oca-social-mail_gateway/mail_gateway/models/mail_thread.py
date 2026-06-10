@@ -74,23 +74,31 @@ class MailThread(models.AbstractModel):
             return result
         return super()._notify_get_recipients(message, msg_vals, **kwargs)
 
-    def _thread_to_store(self, store: Store, /, *, fields=None, request_list=None):
-        res = super()._thread_to_store(store, fields=fields, request_list=request_list)
-        for record in self:
-            followers = record.message_get_followers()
-            if "mail.followers" in followers:
-                store.add(
-                    record,
-                    {
-                        "gateway_followers": [
-                            f["partner"]
-                            for f in followers["mail.followers"]
-                            if f["partner"]["gateway_channels"]
-                        ]
-                    },
-                    as_thread=True,
-                )
-        return res
+    def _thread_to_store(self, store: Store, fields, *, request_list=None):
+        # v19 signature: `fields` is positional. The v18 code round-tripped
+        # message_get_followers() and read f["partner"]["gateway_channels"]
+        # out of the store result — in the v19 store format relations are id
+        # references, so compute the gateway followers from the ORM instead.
+        # Extra data must go through add_records_fields, not store.add()
+        # (which would recurse back into _thread_to_store).
+        super()._thread_to_store(store, fields, request_list=request_list)
+        if request_list is None:
+            # Internal/nested store call (e.g. store.add(..., as_thread=True)
+            # from core), not a direct client thread-data request: the
+            # gateway followers are only consumed by the chatter request.
+            return
+        for thread in self:
+            followers = self.env["mail.followers"].search(
+                [("res_id", "=", thread.id), ("res_model", "=", self._name)]
+            )
+            gateway_partners = followers.partner_id.filtered(
+                lambda p: p.sudo().gateway_channel_ids
+            )
+            store.add_records_fields(
+                thread,
+                {"gateway_followers": Store.Many(gateway_partners)},
+                as_thread=True,
+            )
 
     def _check_can_update_message_content(self, messages):
         # We can delete the messages comming from a gateway on not channels
@@ -121,12 +129,13 @@ class MailThread(models.AbstractModel):
             # Unlink the message
             for gateway_msg in message.gateway_message_ids:
                 gateway_msg.gateway_message_id = False
-                gateway_msg._bus_send_store(
+                # v19: _bus_send_store was removed; use a bus-targeted Store
+                Store(bus_channel=gateway_msg._bus_channel()).add(
                     gateway_msg,
                     {
                         "gateway_thread_data": gateway_msg.sudo().gateway_thread_data,
                     },
-                )
+                ).bus_send()
         return result
 
     def _get_allowed_message_post_params(self):

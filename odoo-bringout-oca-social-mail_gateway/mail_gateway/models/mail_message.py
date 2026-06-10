@@ -84,34 +84,28 @@ class MailMessage(models.Model):
     def _to_store(
         self,
         store: Store,
-        /,
+        fields,
         *,
-        fields=None,
         format_reply=True,
-        msg_vals=None,
-        for_current_user=False,
+        msg_vals=False,
         add_followers=False,
         followers=None,
     ):
-        result = super()._to_store(
+        # v19 signature: `fields` is positional and `for_current_user` is
+        # gone. Extra data must go through add_records_fields — calling
+        # store.add() from inside _to_store recurses back into it.
+        super()._to_store(
             store,
-            fields=fields,
+            fields,
             format_reply=format_reply,
             msg_vals=msg_vals,
-            for_current_user=for_current_user,
             add_followers=add_followers,
             followers=followers,
         )
-        for record in self:
-            store.add(
-                record,
-                {
-                    "gateway_type": record.gateway_type,
-                    "gateway_channel_data": record.gateway_channel_data,
-                    "gateway_thread_data": record.gateway_thread_data,
-                },
-            )
-        return result
+        store.add_records_fields(
+            self,
+            ["gateway_type", "gateway_channel_data", "gateway_thread_data"],
+        )
 
     def _send_to_gateway_thread(self, gateway_channel_id):
         chat_id = gateway_channel_id.gateway_id._get_channel_id(

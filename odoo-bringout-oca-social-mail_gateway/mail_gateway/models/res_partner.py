@@ -3,6 +3,8 @@
 
 from odoo import api, fields, models
 
+from odoo.addons.mail.tools.discuss import Store
+
 
 class ResPartner(models.Model):
     """Update of res.partner class to take into account the gateway."""
@@ -13,37 +15,21 @@ class ResPartner(models.Model):
         "res.partner.gateway.channel", inverse_name="partner_id"
     )
 
-    def _get_channels_as_member(self):
-        channels = super()._get_channels_as_member()
-        if self.env.user.has_group("mail_gateway.gateway_user"):
-            channels |= self.env["discuss.channel"].search(
-                [
-                    ("channel_type", "=", "gateway"),
-                    (
-                        "channel_member_ids",
-                        "in",
-                        self.env["discuss.channel.member"]
-                        .sudo()
-                        ._search(
-                            [
-                                ("partner_id", "=", self.id),
-                                ("is_pinned", "=", True),
-                            ]
-                        ),
-                    ),
-                ]
-            )
-        return channels
+    # NOTE: the v16/v18 _get_channels_as_member override was dropped: since
+    # v18 core moved it to discuss.channel and its pinned-member domain
+    # (channel_type not in channel/group) already includes gateway channels.
 
-    def _to_store(self, store, fields):
-        # v19: Store.one_id was removed (Store redesigned around _to_store/add).
-        # Port of the old extended_one_id monkey-patch: surface the partner's
-        # gateway channels in its discuss-client serialization.
-        super()._to_store(store, fields)
-        for partner in self:
-            channels = partner.sudo().gateway_channel_ids
-            if channels:
-                store.add(partner, {"gateway_channels": channels.mail_format()})
+    def _to_store_defaults(self, target):
+        # v19: Store.one_id was removed and res.partner has no _to_store in
+        # core, so an override there breaks super() and skips the default
+        # field serialization. Port of the old extended_one_id monkey-patch:
+        # surface the partner's gateway channels in its discuss serialization.
+        return super()._to_store_defaults(target) + [
+            Store.Attr(
+                "gateway_channels",
+                lambda p: p.sudo().gateway_channel_ids.mail_format(),
+            ),
+        ]
 
 
 class ResPartnerGatewayChannel(models.Model):

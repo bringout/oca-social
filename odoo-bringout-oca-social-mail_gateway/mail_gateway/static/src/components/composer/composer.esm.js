@@ -1,7 +1,6 @@
 import {Composer} from "@mail/core/common/composer";
 import {_t} from "@web/core/l10n/translation";
 import {patch} from "@web/core/utils/patch";
-import {prettifyMessageContent} from "@mail/utils/common/format";
 
 patch(Composer.prototype, {
     get SEND_TEXT() {
@@ -40,24 +39,19 @@ patch(Composer.prototype, {
         const attachmentIds = this.props.composer.attachments.map(
             (attachment) => attachment.id
         );
-        const body = this.props.composer.textInputContent;
-        const validMentions = this.store.user
-            ? this.messageService.getMentionsFromText(body, {
-                  mentionedChannels: this.props.composer.mentionedChannels,
-                  mentionedPartners: this.props.composer.mentionedPartners,
-              })
-            : undefined;
-        // Debugger
+        // V19: the composer body is the html field (mentions are resolved by
+        // the composer model); suggested recipients carry partner_id directly.
         const context = {
             default_attachment_ids: attachmentIds,
-            default_body: await prettifyMessageContent(body, validMentions),
+            default_body: this.formatDefaultBodyForFullComposer(
+                this.props.composer.composerHtml
+            ),
             default_model: this.thread.model,
             default_partner_ids: this.thread.suggestedRecipients
-                .filter((recipient) => recipient.checked)
-                .map((recipient) => recipient.persona.id),
+                .filter((recipient) => recipient.partner_id)
+                .map((recipient) => recipient.partner_id),
             default_res_ids: [this.thread.id],
             default_subtype_xmlid: "mail.mt_comment",
-            mail_post_autofollow: this.thread.hasWriteAccess,
             default_wizard_partner_ids: Array.from(
                 new Set(
                     this.thread.gateway_followers.map((follower) => {
@@ -87,17 +81,13 @@ patch(Composer.prototype, {
             context: context,
         };
         const options = {
-            onClose: (...args) => {
-                // Args === [] : click on 'X'
-                // args === { special: true } : click on 'discard'
-                const isDiscard = args.length === 0 || args[0]?.special;
-                // Otherwise message is posted (args === [undefined])
-                if (!isDiscard && this.props.composer.thread.type === "mailbox") {
-                    this.notifySendFromMailbox();
-                }
-                this.clear();
-                this.props.messageToReplyTo?.cancel();
-                if (this.thread) {
+            onClose: (args) => {
+                // V19: args === {dismiss: true} (X/escape) or {special: true}
+                // (discard); otherwise the message was posted.
+                const isDiscard = args?.dismiss || args?.special;
+                if (!isDiscard) {
+                    this.clear();
+                    this.props.composer.replyToMessage = undefined;
                     this.thread?.fetchNewMessages();
                 }
             },
