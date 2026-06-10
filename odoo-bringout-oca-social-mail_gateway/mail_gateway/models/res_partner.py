@@ -1,7 +1,7 @@
 # Copyright 2024 Dixmit
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class ResPartner(models.Model):
@@ -13,30 +13,16 @@ class ResPartner(models.Model):
         "res.partner.gateway.channel", inverse_name="partner_id"
     )
 
-    def mail_partner_format(self, fields=None):
-        """Override to add gateway info."""
-        partners_format = super().mail_partner_format(fields=fields)
-        if not fields:
-            fields = {"gateway_channel_ids": True}
-        for partner in self:
-            if "gateway_channel_ids" in fields:
-                partners_format.get(partner).update(
-                    {
-                        "gateway_channels": partner.gateway_channel_ids.mail_format(),
-                    }
-                )
-        return partners_format
-
     def _get_channels_as_member(self):
         channels = super()._get_channels_as_member()
         if self.env.user.has_group("mail_gateway.gateway_user"):
-            channels |= self.env["mail.channel"].search(
+            channels |= self.env["discuss.channel"].search(
                 [
                     ("channel_type", "=", "gateway"),
                     (
                         "channel_member_ids",
                         "in",
-                        self.env["mail.channel.member"]
+                        self.env["discuss.channel.member"]
                         .sudo()
                         ._search(
                             [
@@ -49,6 +35,16 @@ class ResPartner(models.Model):
             )
         return channels
 
+    def _to_store(self, store, fields):
+        # v19: Store.one_id was removed (Store redesigned around _to_store/add).
+        # Port of the old extended_one_id monkey-patch: surface the partner's
+        # gateway channels in its discuss-client serialization.
+        super()._to_store(store, fields)
+        for partner in self:
+            channels = partner.sudo().gateway_channel_ids
+            if channels:
+                store.add(partner, {"gateway_channels": channels.mail_format()})
+
 
 class ResPartnerGatewayChannel(models.Model):
     _name = "res.partner.gateway.channel"
@@ -56,7 +52,7 @@ class ResPartnerGatewayChannel(models.Model):
 
     name = fields.Char(related="gateway_id.name")
     partner_id = fields.Many2one(
-        "res.partner", required=True, ondelete="cascade"
+        "res.partner", required=True, readonly=True, ondelete="cascade"
     )
     gateway_id = fields.Many2one(
         "mail.gateway", required=True, readonly=True, ondelete="cascade"
@@ -66,24 +62,16 @@ class ResPartnerGatewayChannel(models.Model):
         "res.company", related="gateway_id.company_id", store=True
     )
 
-    def name_get(self):
+    @api.depends_context("mail_gateway_partner_info")
+    def _compute_display_name(self):
         # Be able to tell to which partner belongs the gateway partner channel
         # e.g.: picking it from a selector
-        result = []
-        origin = super().name_get()
-        if not self.env.context.get("mail_gateway_partner_info", False):
-            return origin
-        origin_dict = dict(origin)
-        for record in self:
-            result.append(
-                (
-                    record.id,
-                    "{} ({})".format(
-                        record.partner_id.display_name, origin_dict[record.id]
-                    ),
-                )
+        if not self.env.context.get("mail_gateway_partner_info"):
+            return super()._compute_display_name()
+        for gateway_channel in self:
+            gateway_channel.display_name = (
+                f"{gateway_channel.partner_id.display_name} ({gateway_channel.name})"
             )
-        return result
 
     _sql_constraints = [
         (
@@ -92,53 +80,6 @@ class ResPartnerGatewayChannel(models.Model):
             "Partner can only have one configuration for each gateway.",
         ),
     ]
-
-    def write(self, vals):
-        old_partner_map = {}
-        if "partner_id" in vals:
-            for rec in self:
-                old_partner_map[rec.id] = rec.partner_id.id
-        res = super().write(vals)
-        if "partner_id" in vals:
-            new_partner_id = vals["partner_id"]
-            for rec in self:
-                old_pid = old_partner_map.get(rec.id)
-                if old_pid and old_pid != new_partner_id:
-                    rec._update_channel_partner(old_pid, new_partner_id)
-        return res
-
-    def _update_channel_partner(self, old_partner_id, new_partner_id):
-        """Update mail.channel member and name when partner mapping changes.
-
-        Walks up parent_id chain to find top-level company when
-        gateway.forum_per_contact is False.
-        """
-        channels = self.env["mail.channel"].sudo().search([
-            ("gateway_id", "=", self.gateway_id.id),
-            ("gateway_channel_token", "=", self.gateway_token),
-        ])
-        new_partner = self.env["res.partner"].browse(new_partner_id)
-        # Resolve to top-level company if forum_per_contact is off
-        display_partner = new_partner
-        if not self.gateway_id.forum_per_contact:
-            top = new_partner
-            while top.parent_id:
-                top = top.parent_id
-            display_partner = top
-        for channel in channels:
-            member = self.env["mail.channel.member"].sudo().search([
-                ("channel_id", "=", channel.id),
-                ("partner_id", "=", old_partner_id),
-            ], limit=1)
-            if member:
-                self.env.cr.execute(
-                    "UPDATE mail_channel_member SET partner_id = %s WHERE id = %s",
-                    (display_partner.id, member.id),
-                )
-            channel.sudo().write({
-                "name": display_partner.display_name,
-                "anonymous_name": display_partner.display_name,
-            })
 
     def mail_format(self):
         return [r._mail_format() for r in self]

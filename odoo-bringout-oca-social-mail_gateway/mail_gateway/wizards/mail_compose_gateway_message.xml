@@ -2,7 +2,6 @@
 <!-- Copyright 2024 Dixmit
      License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
 <odoo>
-
     <record model="ir.ui.view" id="mail_compose_gateway_message_form_view">
         <field name="model">mail.compose.gateway.message</field>
         <field name="inherit_id" ref="mail.email_compose_message_wizard_form" />
@@ -28,16 +27,7 @@
                 <attribute name="invisible">1</attribute>
                 <attribute name="required">0</attribute>
             </field>
-            <xpath
-                expr="//span[@name='document_followers_text']/.."
-                position="attributes"
-            >
-                <attribute name="invisible">1</attribute>
-                <attribute name="attrs" />
-            </xpath>
+            <!-- v19: mail_composer_recipient_list widget removed from compose form; xpath dropped -->
         </field>
     </record>
-
-
-
 </odoo>

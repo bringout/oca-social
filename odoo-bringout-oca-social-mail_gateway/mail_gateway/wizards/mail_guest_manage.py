@@ -5,7 +5,6 @@ from odoo import fields, models
 
 
 class MailGuestManage(models.TransientModel):
-
     _name = "mail.guest.manage"
     _description = "Assign gateway guest to a partner"
 
@@ -31,12 +30,13 @@ class MailGuestManage(models.TransientModel):
                 "gateway_token": self.guest_id.gateway_token,
             }
         )
-        for member in self.env["mail.channel.member"].search(
+        for member in self.env["discuss.channel.member"].search(
             [("guest_id", "=", self.guest_id.id)]
         ):
-            self.env["mail.channel.member"].create(
+            self.env["discuss.channel.member"].create(
                 self._channel_member_vals(member, partner)
             )
+            member.channel_id.name = partner.complete_name
             member.unlink()
         self.env["mail.message"].search(
             [("author_guest_id", "=", self.guest_id.id)]

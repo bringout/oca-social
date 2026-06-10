@@ -21,7 +21,7 @@ try:
     import telegram
     from lottie.exporters import exporters
     from lottie.importers import importers
-except (ImportError, IOError) as err:
+except (OSError, ImportError) as err:
     _logger.debug(err)
 
 
@@ -77,22 +77,20 @@ class MailGatewayTelegramService(models.AbstractModel):
         return result
 
     def _preprocess_update(self, gateway, update):
-        if not update.message or not update.message.entities:
-            return False
         for entity in update.message.entities:
             if not entity.offset == 0:
                 continue
             if not entity.type == "bot_command":
                 continue
             command = update.message.parse_entity(entity).split("/")[1]
-            if hasattr(self, "_command_%s" % (command)):
-                return getattr(self, "_command_%s" % (command))(gateway, update)
+            if hasattr(self, f"_command_{command}"):
+                return getattr(self, f"_command_{command}")(gateway, update)
         return False
 
     def _command_start(self, gateway, update):
         if (
             not gateway.has_new_channel_security
-            or update.message.text == "/start %s" % gateway.telegram_security_key
+            or update.message.text == f"/start {gateway.telegram_security_key}"
         ):
             return self._get_channel(gateway, update.message.chat_id, update, True)
         return True
@@ -102,9 +100,6 @@ class MailGatewayTelegramService(models.AbstractModel):
             update, self._get_telegram_bot(token=gateway.token)
         )
         if self._preprocess_update(gateway, telegram_update):
-            return
-        if not telegram_update.message:
-            _logger.debug("Ignoring Telegram update without message: %s", telegram_update.update_id)
             return
         chat = self._get_channel(
             gateway, telegram_update.message.chat_id, telegram_update
@@ -130,30 +125,24 @@ class MailGatewayTelegramService(models.AbstractModel):
             return attachment.set_name or attachment.emoji or "sticker"
         if isinstance(attachment, telegram.Contact):
             return attachment.first_name
-        if isinstance(attachment, telegram.Voice):
-            return "voice"
-        if isinstance(attachment, telegram.VideoNote):
-            return "video_note"
         return attachment.file_id
 
     async def _process_telegram_attachment(self, attachment):
         if isinstance(attachment, tuple):
             attachment = attachment[-1]
-            # That might happen with images, we will get the last one as it is the bigger one.
+            # That might happen with images, we will get the last one as it is the
+            # bigger one.
         if isinstance(
             attachment,
-            (
-                telegram.Game,
-                telegram.Invoice,
-                telegram.Location,
-                telegram.SuccessfulPayment,
-                telegram.Venue,
-            ),
+            telegram.Game
+            | telegram.Invoice
+            | telegram.Location
+            | telegram.SuccessfulPayment
+            | telegram.Venue,
         ):
             return
         if isinstance(attachment, telegram.Contact):
-            vcard = attachment.vcard or ""
-            data = vcard.encode("utf-8")
+            data = attachment.vcard.encode("utf-8")
         else:
             file = await attachment.get_file()
             data = bytes(await file.download_as_bytearray())
@@ -175,11 +164,9 @@ class MailGatewayTelegramService(models.AbstractModel):
             output = BytesIO()
             exporter.process(an, output, **output_options)
             data = output.getvalue()
-        # Use Telegram-provided mime_type when available, fall back to detection
-        mimetype = getattr(attachment, "mime_type", None) or guess_mimetype(data)
-        ext = mimetypes.guess_extension(mimetype) or ".bin"
+        mimetype = guess_mimetype(data)
         return (
-            "{}{}".format(file_name, ext),
+            f"{file_name}{mimetypes.guess_extension(mimetype)}",
             data,
             {},
         )
@@ -202,12 +189,8 @@ class MailGatewayTelegramService(models.AbstractModel):
                 effective_attachment = current_attachment
             if isinstance(effective_attachment, telegram.Location):
                 body += (
-                    '<a target="_blank" href="https://www.google.com/'
-                    'maps/search/?api=1&query=%s,%s">Location</a>'
-                    % (
-                        effective_attachment.latitude,
-                        effective_attachment.longitude,
-                    )
+                    f'<a target="_blank" href="https://www.google.com/maps/search/?api=1&query='
+                    f'{effective_attachment.latitude},{effective_attachment.longitude}">Location</a>'
                 )
             attachment_data = asyncio.run(
                 self._process_telegram_attachment(effective_attachment)
@@ -216,16 +199,12 @@ class MailGatewayTelegramService(models.AbstractModel):
                 attachments.append(attachment_data)
         if len(body) > 0 or attachments:
             author = self._get_author(chat.gateway_id, update)
-            author_id = author._name == "res.partner" and author.id
-            email_from = False
-            if author_id:
-                email_from = '"%s via Telegram" <telegram@gateway>' % author.name
             new_message = chat.message_post(
                 body=body,
-                author_id=author_id,
-                email_from=email_from,
+                author_id=author._name == "res.partner" and author.id,
                 gateway_type="telegram",
                 date=update.message.date.replace(tzinfo=None),
+                # message_id=update.message.message_id,
                 subtype_xmlid="mail.mt_comment",
                 message_type="comment",
                 attachments=attachments,
@@ -251,10 +230,10 @@ class MailGatewayTelegramService(models.AbstractModel):
                         .browse(related_message.gateway_message_id.res_id)
                         .message_post(
                             body=body,
-                            author_id=author_id,
-                            email_from=email_from,
+                            author_id=author._name == "res.partner" and author.id,
                             gateway_type="telegram",
                             date=update.message.date.replace(tzinfo=None),
+                            # message_id=update.message.message_id,
                             subtype_xmlid="mail.mt_comment",
                             message_type="comment",
                             attachments=attachments,
@@ -262,17 +241,6 @@ class MailGatewayTelegramService(models.AbstractModel):
                     )
                     new_message.gateway_message_id = new_related_message
                     self._post_process_reply(related_message)
-                    # Notify followers of the business document so chatter updates
-                    record = self.env[related_message.gateway_message_id.model].browse(
-                        related_message.gateway_message_id.res_id
-                    )
-                    follower_pids = record.message_follower_ids.mapped("partner_id")
-                    for partner in follower_pids:
-                        self.env["bus.bus"]._sendone(
-                            partner,
-                            "mail.message/inbox",
-                            new_related_message.message_format()[0],
-                        )
             return new_message
 
     async def _send_telegram(
@@ -334,9 +302,7 @@ class MailGatewayTelegramService(models.AbstractModel):
                     _("Unable to send the telegram message"), exc
                 ) from None
             else:
-                _logger.warning(
-                    "Issue sending message with id {}: {}".format(record.id, exc)
-                )
+                _logger.warning(f"Issue sending message with id {record.id}: {exc}")
                 record.sudo().write(
                     {
                         "notification_status": "exception",

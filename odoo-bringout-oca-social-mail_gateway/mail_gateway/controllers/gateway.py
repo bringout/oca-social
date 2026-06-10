@@ -6,6 +6,8 @@ import logging
 
 from odoo.http import Controller, request, route
 
+from odoo.addons.mail.tools.discuss import add_guest_to_context
+
 _logger = logging.getLogger(__name__)
 
 
@@ -17,6 +19,7 @@ class GatewayController(Controller):
         methods=["GET", "POST"],
         csrf=False,
     )
+    @add_guest_to_context
     def post_update(self, usage, token, *args, **kwargs):
         if request.httprequest.method == "GET":
             bot_data = request.env["mail.gateway"]._get_gateway(
@@ -30,7 +33,7 @@ class GatewayController(Controller):
                     ],
                 )
             return (
-                request.env["mail.gateway.%s" % usage]
+                request.env[f"mail.gateway.{usage}"]
                 .with_user(bot_data["webhook_user_id"])
                 .with_company(bot_data["company_id"])
                 ._receive_get_update(bot_data, request, **kwargs)
@@ -48,13 +51,14 @@ class GatewayController(Controller):
                     ("Content-Type", "application/json"),
                 ],
             )
-        jsonrequest = json.loads(
-            request.httprequest.get_data().decode(
-                getattr(request.httprequest, "charset", "utf-8")
-            )
+        charset = (
+            hasattr(request.httprequest, "charset")
+            and request.httprequest.charset
+            or "utf-8"
         )
+        jsonrequest = json.loads(request.httprequest.get_data().decode(charset))
         dispatcher = (
-            request.env["mail.gateway.%s" % usage]
+            request.env[f"mail.gateway.{usage}"]
             .with_user(bot_data["webhook_user_id"])
             .with_context(no_gateway_notification=True)
         )

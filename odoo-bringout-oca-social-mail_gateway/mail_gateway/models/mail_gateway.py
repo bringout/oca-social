@@ -49,7 +49,7 @@ class MailGateway(models.Model):
 
     def _get_channel_id(self, chat_token):
         return (
-            self.env["mail.channel"]
+            self.env["discuss.channel"]
             .search(
                 [
                     ("gateway_channel_token", "=", str(chat_token)),
@@ -61,7 +61,7 @@ class MailGateway(models.Model):
         )
 
     def _get_webhook_url(self):
-        return "%s/gateway/%s/%s/update" % (
+        return "{}/gateway/{}/{}/update".format(
             self.webhook_url
             or self.env["ir.config_parameter"].get_param("web.base.url"),
             self.gateway_type,
@@ -79,11 +79,11 @@ class MailGateway(models.Model):
     def set_webhook(self):
         self.ensure_one()
         if self.can_set_webhook:
-            self.env["mail.gateway.%s" % self.gateway_type]._set_webhook(self)
+            self.env[f"mail.gateway.{self.gateway_type}"]._set_webhook(self)
 
     def remove_webhook(self):
         self.ensure_one()
-        self.env["mail.gateway.%s" % self.gateway_type]._remove_webhook(self)
+        self.env[f"mail.gateway.{self.gateway_type}"]._remove_webhook(self)
 
     def update_webhook(self):
         self.ensure_one()
@@ -91,20 +91,20 @@ class MailGateway(models.Model):
         self.set_webhook()
 
     def write(self, vals):
-        res = super(MailGateway, self).write(vals)
+        res = super().write(vals)
         if (
             "webhook_key" in vals
             or "integrated_webhook_state" in vals
             or "webhook_secret" in vals
             or "webhook_user_id" in vals
         ):
-            self.clear_caches()
+            self.env.registry.clear_cache()
         return res
 
     @api.model_create_multi
     def create(self, mvals):
-        res = super(MailGateway, self).create(mvals)
-        self.clear_caches()
+        res = super().create(mvals)
+        self.env.registry.clear_cache()
         return res
 
     @api.model
