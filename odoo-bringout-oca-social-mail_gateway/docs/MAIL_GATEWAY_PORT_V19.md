@@ -132,6 +132,45 @@ Where this fork deliberately differs from the PR:
 * PR sends `gateway_followers` as plain dicts; this fork sends a
   `Store.Many` relation (idiomatic v19, auto-populates the JS field).
 
+## Round 3 (2026-06-11): silent message-rendering breakage — thread_actions
+
+After install on `bringout-mig-v19-1.hodi.ba`, Discuss rendered (sidebar,
+gateway category, members) but **no messages displayed in any channel, even
+#general** — with ZERO console/server errors: the RPCs returned the messages
+and the JS store held them (`thread.messages.length == 3`), but the Thread
+component stayed on its `o-mail-Thread-empty` branch and never re-rendered.
+
+Culprit (found by client-side bundle bisection, see below):
+`static/src/core/common/thread_actions.esm.js`. Its action `condition()`
+(inherited from the 18.0 code) fired **async ORM calls from inside
+condition()** and **mutated the reactive thread record**
+(`thread._guestChecked` / `_cachedGuestId` / `_cachedPartnerId` +
+`owner.render()`); in v19 conditions are evaluated inside the reactive
+render of the thread view, and those side effects silently killed the
+reactivity of the whole thread pane. **Rule: v19 action `condition`s must
+be pure.** Rewritten: conditions just gate on
+`thread.channel_type === "gateway"`; the guest/partner ORM lookups moved
+into `open()` (on click), with notification fallbacks.
+
+### Diagnosing "fetched but not rendered" (reusable method)
+
+`profile/infra/scripts/test_odoo_web_client_check_discuss.py` (playwright +
+system chromium, password from `pass`): logs in, opens Discuss + a channel,
+and compares **DOM-rendered messages vs JS-store content**, capturing
+console errors, unhandled rejections, and mail RPC bodies. Its `--kill`
+option intercepts the asset bundle and disables chosen
+`odoo.define('@module/...')` entries by injecting an unmet dependency —
+a pure client-side bisect, the instance is never modified:
+
+```
+test_odoo_web_client_check_discuss.py --kill '@mail_gateway/'   # all module JS
+test_odoo_web_client_check_discuss.py --kill '@mail_gateway/core/common/thread_actions'
+```
+
+Bisecting the 17 mail_gateway JS modules took 6 runs and pinpointed
+thread_actions. Verified after the fix: #general renders 3/3, telegram
+gateway channel renders 30/30.
+
 ## Remaining work / verification plan
 
 The hodi-2 port harness (`/root/port_test_final.sh`, scratch DB
